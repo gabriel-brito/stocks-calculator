@@ -26,7 +26,12 @@ const validState: AppState = {
       quantityGranted: 100,
       strikePrice: 10,
       grantDate: "2024-01-15",
-      vesting: "25_25_50",
+      vestingSchedule: {
+        startDate: "2024-01-15",
+        cliffMonths: 12,
+        totalMonths: 36,
+        frequency: "MONTHLY",
+      },
     },
   ],
   purchasePlans: [
@@ -38,6 +43,26 @@ const validState: AppState = {
       purchaseSharePriceFixed: 5,
     },
   ],
+  shareClasses: [
+    {
+      id: "common",
+      name: "Common",
+      type: "COMMON",
+      seniority: 0,
+      preferenceMultiple: 0,
+      investedAmount: 0,
+      participation: "NONE",
+    },
+  ],
+  holdings: [
+    {
+      holderId: "You",
+      classId: "common",
+      shares: 120,
+    },
+  ],
+  financingRounds: [],
+  convertibles: [],
   settings: {
     persistenceOptIn: true,
     currency: "BRL",
@@ -53,6 +78,37 @@ describe("AppDocument", () => {
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
       expect(parsed.value).toEqual(document);
+    }
+  });
+
+  it("migrates v1 documents to v2", () => {
+    const v1Document = {
+      schemaVersion: "v1",
+      state: {
+        capTableBase: validState.capTableBase,
+        dilutionEvents: validState.dilutionEvents,
+        valuations: validState.valuations,
+        exitScenario: validState.exitScenario,
+        purchasePlans: validState.purchasePlans,
+        settings: validState.settings,
+        schemaVersion: "v1",
+        optionGrants: [
+          {
+            quantityGranted: 100,
+            strikePrice: 10,
+            grantDate: "2024-01-15",
+            vesting: "25_25_50",
+          },
+        ],
+      },
+    };
+
+    const parsed = parseDocument(v1Document);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.schemaVersion).toBe("v2");
+      expect(parsed.value.state.schemaVersion).toBe("v2");
+      expect(parsed.value.state.optionGrants[0]?.vestingSchedule).toBeTruthy();
     }
   });
 });

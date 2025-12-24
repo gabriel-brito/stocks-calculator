@@ -1,28 +1,32 @@
 import { monthsBetweenFloor } from "../date";
+import type { OptionGrant, VestingFrequency } from "../types";
 
 export type VestingSnapshot = {
   vestedPercent: number;
   vestedQty: number;
 };
 
-export const computeVesting = (
-  grantDate: string,
-  quantityGranted: number,
+const getPeriodSize = (frequency: VestingFrequency) =>
+  frequency === "QUARTERLY" ? 3 : 1;
+
+export const computeVestingFromSchedule = (
+  grant: OptionGrant,
   asOfDate: string,
 ): VestingSnapshot => {
-  const months = monthsBetweenFloor(grantDate, asOfDate);
-  let vestedPercent = 0;
-
-  if (months >= 36) {
-    vestedPercent = 1;
-  } else if (months >= 24) {
-    vestedPercent = 0.5;
-  } else if (months >= 12) {
-    vestedPercent = 0.25;
+  const schedule = grant.vestingSchedule;
+  const monthsElapsed = monthsBetweenFloor(schedule.startDate, asOfDate);
+  if (monthsElapsed < schedule.cliffMonths) {
+    return { vestedPercent: 0, vestedQty: 0 };
   }
+
+  const periodSize = getPeriodSize(schedule.frequency);
+  const periodsTotal = Math.max(1, Math.ceil(schedule.totalMonths / periodSize));
+  const periodsElapsed =
+    Math.floor((monthsElapsed - schedule.cliffMonths) / periodSize) + 1;
+  const vestedPercent = Math.min(1, periodsElapsed / periodsTotal);
 
   return {
     vestedPercent,
-    vestedQty: Math.floor(quantityGranted * vestedPercent),
+    vestedQty: Math.floor(grant.quantityGranted * vestedPercent),
   };
 };

@@ -6,17 +6,19 @@ import type {
   PurchasePlan,
   ValuationPoint,
 } from "../types";
+import { getExitEquityValue } from "../exit";
 import { computeFD } from "./computeFD";
 import { computeSharePrice } from "./computeSharePrice";
-import { computeVesting } from "./computeVesting";
+import { computeVestingFromSchedule } from "./computeVesting";
 import { generateMonthlyPurchaseDates } from "./generateMonthlyPurchaseDates";
 import { getPurchaseSharePrice } from "./getPurchaseSharePrice";
 import { getMonthlyAmountEffective } from "./getMonthlyAmountEffective";
-import { compareYMD } from "../date";
+import { addDaysYMD, compareYMD } from "../date";
 
 export type ExitOptionSnapshot = {
   grant: OptionGrant;
   vestedQty: number;
+  exercisableQty: number;
   intrinsicPerOption: number;
   payout: number;
   expired: boolean;
@@ -83,26 +85,43 @@ export const computeExitSnapshots = ({
     dilutionEvents,
     exitScenario.date,
   );
-  const exitSharePrice = computeSharePrice(
-    exitScenario.exitEquityValue,
-    exitFD,
-  );
+  const exitEquityValue = getExitEquityValue(exitScenario);
+  const exitSharePrice = computeSharePrice(exitEquityValue, exitFD);
 
   const options = optionGrants.map((grant) => {
-    const { vestedQty } = computeVesting(
-      grant.grantDate,
-      grant.quantityGranted,
-      exitScenario.date,
-    );
+    const vestingAsOf =
+      grant.terminationDate && compareYMD(exitScenario.date, grant.terminationDate) > 0
+        ? grant.terminationDate
+        : exitScenario.date;
+    const baseVesting = computeVestingFromSchedule(grant, vestingAsOf);
+    const accelerationPercent =
+      grant.acceleration && grant.acceleration.type !== "NONE"
+        ? Math.min(1, grant.acceleration.percent)
+        : 0;
+    const vestedPercent = Math.max(baseVesting.vestedPercent, accelerationPercent);
+    const vestedQty = Math.floor(grant.quantityGranted * vestedPercent);
     const intrinsicPerOption = Math.max(exitSharePrice - grant.strikePrice, 0);
     const expired =
       grant.expirationDate !== undefined &&
       compareYMD(grant.expirationDate, exitScenario.date) < 0;
-    const payout = expired ? 0 : intrinsicPerOption * vestedQty;
+    let exercisableQty = expired ? 0 : vestedQty;
+    if (
+      !expired &&
+      grant.terminationDate &&
+      compareYMD(exitScenario.date, grant.terminationDate) > 0
+    ) {
+      const windowDays = grant.postTerminationExerciseWindowDays ?? 0;
+      const lastExerciseDate = addDaysYMD(grant.terminationDate, windowDays);
+      if (compareYMD(exitScenario.date, lastExerciseDate) > 0) {
+        exercisableQty = 0;
+      }
+    }
+    const payout = expired ? 0 : intrinsicPerOption * exercisableQty;
 
     return {
       grant,
       vestedQty,
+      exercisableQty,
       intrinsicPerOption,
       payout,
       expired,

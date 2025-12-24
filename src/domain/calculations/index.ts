@@ -1,6 +1,10 @@
 export { computeFD } from "./computeFD";
 export { computeSharePrice } from "./computeSharePrice";
-export { computeVesting } from "./computeVesting";
+export { computeVestingFromSchedule } from "./computeVesting";
+export { computeWaterfallExitDistribution } from "./computeWaterfallExitDistribution";
+export { computeFinancingRounds } from "./computeFinancingRounds";
+export { applyFinancingRounds } from "./applyFinancingRounds";
+export { computeConvertibleConversion, computeConvertibleAmount } from "./computeConvertibleConversion";
 export { computeOptionsSnapshot } from "./computeOptionsSnapshot";
 export { computePurchasePlanSnapshot } from "./computePurchasePlanSnapshot";
 export { computeExitSnapshots } from "./computeExitSnapshots";

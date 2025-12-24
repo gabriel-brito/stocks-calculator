@@ -14,7 +14,15 @@ import type { DateYMD } from "@/domain/date";
 import type { AppState } from "@/domain/types";
 import { normalizePurchasePlan } from "@/domain/normalize";
 
-import { createOptionGrant, createPurchasePlan, type AppAction } from "./actions";
+import {
+  createHolding,
+  createFinancingRound,
+  createConvertible,
+  createOptionGrant,
+  createPurchasePlan,
+  createShareClass,
+  type AppAction,
+} from "./actions";
 import { clearAppState, loadAppState, saveAppState } from "../persistence/localStorage";
 
 type AppStateContextValue = {
@@ -35,7 +43,7 @@ const AppDispatchContext = createContext<AppDispatchContextValue | undefined>(
 const DEFAULT_DATE: DateYMD = "2024-01-01";
 
 const getDefaultState = (): AppState => ({
-  schemaVersion: "v1",
+  schemaVersion: "v2",
   capTableBase: {
     commonOutstanding: 0,
     optionPoolReserved: 0,
@@ -54,6 +62,26 @@ const getDefaultState = (): AppState => ({
   },
   optionGrants: [],
   purchasePlans: [],
+  shareClasses: [
+    {
+      id: "common",
+      name: "Common",
+      type: "COMMON",
+      seniority: 0,
+      preferenceMultiple: 0,
+      investedAmount: 0,
+      participation: "NONE",
+    },
+  ],
+  holdings: [
+    {
+      holderId: "You",
+      classId: "common",
+      shares: 0,
+    },
+  ],
+  financingRounds: [],
+  convertibles: [],
   settings: {
     persistenceOptIn: false,
     currency: "BRL",
@@ -98,6 +126,11 @@ const appStateReducer = (state: AppState, action: AppAction): AppState => {
           ? state.exitScenario ?? { date: DEFAULT_DATE, exitEquityValue: 0 }
           : undefined,
       };
+    case "exit/replace":
+      return {
+        ...state,
+        exitScenario: action.value,
+      };
     case "exit/update":
       if (!state.exitScenario) {
         return state;
@@ -113,6 +146,11 @@ const appStateReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         optionGrants: [...state.optionGrants, createOptionGrant()],
+      };
+    case "option/replace":
+      return {
+        ...state,
+        optionGrants: action.value,
       };
     case "option/update":
       return {
@@ -134,6 +172,11 @@ const appStateReducer = (state: AppState, action: AppAction): AppState => {
           createPurchasePlan(),
         ]),
       };
+    case "purchase/replace":
+      return {
+        ...state,
+        purchasePlans: normalizePurchasePlans(action.value),
+      };
     case "purchase/update":
       return {
         ...state,
@@ -147,6 +190,98 @@ const appStateReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         purchasePlans: state.purchasePlans.filter((_, index) => index !== action.index),
+      };
+    case "share-class/add": {
+      const next = createShareClass(state.shareClasses.length);
+      return {
+        ...state,
+        shareClasses: [...state.shareClasses, next],
+      };
+    }
+    case "share-class/replace":
+      return {
+        ...state,
+        shareClasses: action.value,
+      };
+    case "share-class/update":
+      return {
+        ...state,
+        shareClasses: state.shareClasses.map((shareClass, index) =>
+          index === action.index
+            ? { ...shareClass, [action.field]: action.value }
+            : shareClass,
+        ),
+      };
+    case "share-class/remove": {
+      const nextClasses = state.shareClasses.filter(
+        (_, index) => index !== action.index,
+      );
+      const nextClassIds = new Set(nextClasses.map((item) => item.id));
+      return {
+        ...state,
+        shareClasses: nextClasses,
+        holdings: state.holdings.filter((holding) =>
+          nextClassIds.has(holding.classId),
+        ),
+      };
+    }
+    case "holding/add": {
+      const firstClass = state.shareClasses[0]?.id ?? "common";
+      return {
+        ...state,
+        holdings: [...state.holdings, createHolding(firstClass)],
+      };
+    }
+    case "holding/replace":
+      return {
+        ...state,
+        holdings: action.value,
+      };
+    case "holding/update":
+      return {
+        ...state,
+        holdings: state.holdings.map((holding, index) =>
+          index === action.index ? { ...holding, [action.field]: action.value } : holding,
+        ),
+      };
+    case "holding/remove":
+      return {
+        ...state,
+        holdings: state.holdings.filter((_, index) => index !== action.index),
+      };
+    case "round/add":
+      return {
+        ...state,
+        financingRounds: [...state.financingRounds, createFinancingRound()],
+      };
+    case "round/update":
+      return {
+        ...state,
+        financingRounds: state.financingRounds.map((round, index) =>
+          index === action.index ? { ...round, [action.field]: action.value } : round,
+        ),
+      };
+    case "round/remove":
+      return {
+        ...state,
+        financingRounds: state.financingRounds.filter((_, index) => index !== action.index),
+      };
+    case "convertible/add":
+      return {
+        ...state,
+        convertibles: [...state.convertibles, createConvertible()],
+      };
+    case "convertible/update":
+      return {
+        ...state,
+        convertibles: state.convertibles.map((item, index) =>
+          index === action.index ? { ...item, [action.field]: action.value } : item,
+        ),
+      };
+    case "convertible/remove":
+      return {
+        ...state,
+        convertibles: state.convertibles.filter((_, index) => index !== action.index),
       };
     case "settings/update":
       return {

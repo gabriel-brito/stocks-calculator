@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseAppState } from "./schema";
 
 const validState = {
-  schemaVersion: "v1",
+  schemaVersion: "v2",
   capTableBase: {
     commonOutstanding: 100,
     optionPoolReserved: 20,
@@ -25,7 +25,12 @@ const validState = {
       quantityGranted: 100,
       strikePrice: 10,
       grantDate: "2024-01-15",
-      vesting: "25_25_50",
+      vestingSchedule: {
+        startDate: "2024-01-15",
+        cliffMonths: 12,
+        totalMonths: 36,
+        frequency: "MONTHLY",
+      },
     },
   ],
   purchasePlans: [
@@ -37,6 +42,26 @@ const validState = {
       purchaseSharePriceFixed: 5,
     },
   ],
+  shareClasses: [
+    {
+      id: "common",
+      name: "Common",
+      type: "COMMON",
+      seniority: 0,
+      preferenceMultiple: 0,
+      investedAmount: 0,
+      participation: "NONE",
+    },
+  ],
+  holdings: [
+    {
+      holderId: "You",
+      classId: "common",
+      shares: 100,
+    },
+  ],
+  financingRounds: [],
+  convertibles: [],
   settings: {
     persistenceOptIn: true,
     currency: "BRL",

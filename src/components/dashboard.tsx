@@ -31,8 +31,11 @@ import {
   generateMonthlyPurchaseDates,
   getMonthlyAmountEffective,
   getPurchaseSharePrice,
+  computeWaterfallExitDistribution,
+  computeConvertibleConversion,
 } from "@/domain/calculations";
 import { compareYMD, isValidYMD, parseYMD } from "@/domain/date";
+import { getExitEquityValue } from "@/domain/exit";
 
 interface DashboardProps {
   state: AppState;
@@ -64,9 +67,14 @@ export function Dashboard({ state }: DashboardProps) {
     state.valuations.current.equityValue > 0 &&
     isValidYMD(state.valuations.current.date);
   const hasInstruments =
-    state.optionGrants.length > 0 || state.purchasePlans.length > 0;
+    state.optionGrants.length > 0 ||
+    state.purchasePlans.length > 0 ||
+    state.convertibles.length > 0 ||
+    state.financingRounds.length > 0;
+  const hasExitScenario = state.exitScenario !== undefined;
+  const hasDashboardInputs = hasInstruments || hasExitScenario;
 
-  if (!hasCapTable || !hasCurrentValuation || !hasInstruments) {
+  if (!hasCapTable || !hasCurrentValuation || !hasDashboardInputs) {
     return (
       <Card>
         <CardHeader>
@@ -88,9 +96,9 @@ export function Dashboard({ state }: DashboardProps) {
                   ✗ Current Valuation
                 </li>
               ) : null}
-              {!hasInstruments ? (
+              {!hasDashboardInputs ? (
                 <li className="flex items-center gap-2 text-destructive">
-                  ✗ Pelo menos 1 Stock Grant ou Plano DCA
+                  ✗ Pelo menos 1 Stock Grant, Plano DCA ou Exit Scenario
                 </li>
               ) : null}
             </ul>
@@ -100,6 +108,14 @@ export function Dashboard({ state }: DashboardProps) {
     );
   }
 
+  const entryFD =
+    isValidYMD(state.valuations.entry.date)
+      ? computeFD(
+          state.capTableBase,
+          state.dilutionEvents,
+          state.valuations.entry.date,
+        )
+      : 0;
   const currentSharePrice =
     state.valuations.current.equityValue > 0 && fd > 0
       ? computeSharePrice(state.valuations.current.equityValue, fd)
@@ -109,61 +125,141 @@ export function Dashboard({ state }: DashboardProps) {
       ? computeFD(state.capTableBase, state.dilutionEvents, state.exitScenario.date)
       : 0;
   const exitSharePrice =
-    state.exitScenario && state.exitScenario.exitEquityValue > 0 && exitFD > 0
-      ? computeSharePrice(state.exitScenario.exitEquityValue, exitFD)
+    state.exitScenario && exitFD > 0
+      ? computeSharePrice(getExitEquityValue(state.exitScenario), exitFD)
       : 0;
 
-  const purchaseSnapshots = state.purchasePlans.map((plan) =>
-    computePurchasePlanSnapshot(
+  const purchaseSnapshots = state.purchasePlans.map((plan) => {
+    const canComputePurchases =
+      entryFD > 0 &&
+      isValidYMD(plan.startDate) &&
+      isValidYMD(state.valuations.current.date);
+    if (!canComputePurchases) {
+      return null;
+    }
+    return computePurchasePlanSnapshot(
       plan,
       state.valuations.entry,
       state.valuations.current,
       state.capTableBase,
       state.dilutionEvents,
       state.valuations.current.date,
-    ),
-  );
+    );
+  });
 
   const totalInvested = purchaseSnapshots.reduce(
-    (sum, snap) => sum + snap.investedTotal,
+    (sum, snap) => sum + (snap?.investedTotal ?? 0),
     0,
   );
   const totalShares = purchaseSnapshots.reduce(
-    (sum, snap) => sum + snap.sharesTotal,
+    (sum, snap) => sum + (snap?.sharesTotal ?? 0),
     0,
   );
   const totalCurrentValue = totalShares * currentSharePrice;
   const totalGain = totalCurrentValue - totalInvested;
   const multiple = totalInvested > 0 ? totalCurrentValue / totalInvested : 0;
 
-  const optionsSnapshots = state.optionGrants.map((grant) =>
-    computeOptionsSnapshot(
+  const optionsSnapshots = state.optionGrants.map((grant) => {
+    const canComputeOptions =
+      fd > 0 &&
+      isValidYMD(state.valuations.current.date) &&
+      isValidYMD(grant.grantDate);
+    if (!canComputeOptions) {
+      return null;
+    }
+    return computeOptionsSnapshot(
       grant,
       state.valuations.current,
       state.capTableBase,
       state.dilutionEvents,
       state.valuations.current.date,
-    ),
-  );
+    );
+  });
 
   const totalIntrinsic = optionsSnapshots.reduce(
-    (sum, snap) => sum + snap.intrinsicValueVested,
+    (sum, snap) => sum + (snap?.intrinsicValueVested ?? 0),
     0,
   );
-  const exitSnapshots = state.exitScenario
-    ? computeExitSnapshots({
-        exitScenario: state.exitScenario,
-        optionGrants: state.optionGrants,
-        purchasePlans: state.purchasePlans,
-        capTableBase: state.capTableBase,
-        dilutionEvents: state.dilutionEvents,
-        entryValuation: state.valuations.entry,
-      })
-    : null;
+  const exitSnapshots =
+    state.exitScenario &&
+    exitFD > 0 &&
+    entryFD > 0 &&
+    isValidYMD(state.exitScenario.date)
+      ? computeExitSnapshots({
+          exitScenario: state.exitScenario,
+          optionGrants: state.optionGrants,
+          purchasePlans: state.purchasePlans,
+          capTableBase: state.capTableBase,
+          dilutionEvents: state.dilutionEvents,
+          entryValuation: state.valuations.entry,
+        })
+      : null;
 
   const totalPayout = exitSnapshots
     ? exitSnapshots.options.reduce((sum, entry) => sum + entry.payout, 0)
     : 0;
+
+  const exitHoldings = () => {
+    if (!state.exitScenario || exitSharePrice <= 0 || exitFD <= 0) {
+      return { shareClasses: state.shareClasses, holdings: state.holdings };
+    }
+
+    const commonClass =
+      state.shareClasses.find((item) => item.type === "COMMON") ??
+      state.shareClasses[0];
+    if (!commonClass) {
+      return { shareClasses: state.shareClasses, holdings: state.holdings };
+    }
+
+    const holderPrefix = "Convertible Investors - ";
+    const existingConvertibleHoldings = new Set(
+      state.holdings
+        .filter((holding) => holding.holderId.startsWith(holderPrefix))
+        .map((holding) => holding.holderId),
+    );
+
+    const nextHoldings = [...state.holdings];
+    state.convertibles.forEach((convertible) => {
+      if (
+        convertible.convertsOn !== "EXIT" &&
+        convertible.convertsOn !== "BOTH"
+      ) {
+        return;
+      }
+      const holderId = `${holderPrefix}${convertible.id}`;
+      if (existingConvertibleHoldings.has(holderId)) {
+        return;
+      }
+      const conversion = computeConvertibleConversion(
+        convertible,
+        exitSharePrice,
+        exitFD,
+        state.exitScenario!.date,
+      );
+      if (!conversion) return;
+      nextHoldings.push({
+        holderId,
+        classId: commonClass.id,
+        shares: conversion.sharesIssued,
+      });
+    });
+
+    return { shareClasses: state.shareClasses, holdings: nextHoldings };
+  };
+
+  const exitState = exitHoldings();
+  const exitEquityValue = state.exitScenario
+    ? getExitEquityValue(state.exitScenario)
+    : 0;
+
+  const waterfall =
+    state.exitScenario && exitEquityValue > 0
+      ? computeWaterfallExitDistribution(
+          exitState.shareClasses,
+          exitState.holdings,
+          exitEquityValue,
+        )
+      : null;
 
   const chartData = () => {
     const entries: Record<string, { invested: number; shares: number }> = {};
@@ -183,6 +279,7 @@ export function Dashboard({ state }: DashboardProps) {
         state.dilutionEvents,
         state.valuations.entry.date,
       );
+      if (entryFD <= 0) return;
       const purchasePrice = getPurchaseSharePrice(plan, state.valuations.entry, entryFD);
       if (purchasePrice <= 0) return;
 
@@ -448,6 +545,7 @@ export function Dashboard({ state }: DashboardProps) {
                   <TableHead>Grant Date</TableHead>
                   <TableHead className="text-right">Granted</TableHead>
                   <TableHead className="text-right">Vested</TableHead>
+                  <TableHead className="text-right">Exercisable</TableHead>
                   <TableHead className="text-right">Strike Price</TableHead>
                   <TableHead className="text-right">Intrinsic Value</TableHead>
                   {state.exitScenario ? (
@@ -467,17 +565,20 @@ export function Dashboard({ state }: DashboardProps) {
                         {grant.quantityGranted.toLocaleString("pt-BR")}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {snapshot.vestedQty.toLocaleString("pt-BR")}
+                        {snapshot ? snapshot.vestedQty.toLocaleString("pt-BR") : "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {snapshot ? snapshot.exercisableQty.toLocaleString("pt-BR") : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         R$ {grant.strikePrice.toFixed(4)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-success">
-                        R$ {formatCurrency(snapshot.intrinsicValueVested)}
+                        {snapshot ? `R$ ${formatCurrency(snapshot.intrinsicValueVested)}` : "—"}
                       </TableCell>
                       {state.exitScenario ? (
                         <TableCell className="text-right tabular-nums">
-                          R$ {formatCurrency(payout)}
+                          {snapshot ? `R$ ${formatCurrency(payout)}` : "—"}
                         </TableCell>
                       ) : null}
                     </TableRow>
@@ -485,6 +586,91 @@ export function Dashboard({ state }: DashboardProps) {
                 })}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {waterfall ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Waterfall Distribution (1x non-participating)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Classe</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Participation</TableHead>
+                  <TableHead className="text-right">Cap</TableHead>
+                  <TableHead className="text-right">Seniority</TableHead>
+                  <TableHead className="text-right">Pref (R$)</TableHead>
+                  <TableHead className="text-right">Conversao (R$)</TableHead>
+                  <TableHead className="text-right">Decisao</TableHead>
+                  <TableHead className="text-right">Payout (R$)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {waterfall.classResults.map((result) => (
+                  <TableRow key={result.classId}>
+                    <TableCell>{result.name}</TableCell>
+                    <TableCell>{result.type}</TableCell>
+                    <TableCell>
+                      {result.type === "PREFERRED"
+                        ? state.shareClasses.find((item) => item.id === result.classId)
+                            ?.participation ?? "—"
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {result.type === "PREFERRED"
+                        ? state.shareClasses.find((item) => item.id === result.classId)
+                            ?.participationCapMultiple ?? "—"
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {result.seniority}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(result.preferenceAmount)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(result.conversionValue)}
+                    </TableCell>
+                    <TableCell className="text-right">{result.decision}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(result.payout)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {waterfall.holdingResults.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Holder</TableHead>
+                    <TableHead>Classe</TableHead>
+                    <TableHead className="text-right">Shares</TableHead>
+                    <TableHead className="text-right">Payout (R$)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {waterfall.holdingResults.map((result, index) => (
+                    <TableRow key={`${result.holderId}-${index}`}>
+                      <TableCell>{result.holderId}</TableCell>
+                      <TableCell>{result.className}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {result.shares.toLocaleString("pt-BR")}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(result.payout)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

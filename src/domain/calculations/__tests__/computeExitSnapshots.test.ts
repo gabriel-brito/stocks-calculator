@@ -14,7 +14,12 @@ describe("computeExitSnapshots", () => {
           quantityGranted: 100,
           strikePrice: 20,
           grantDate: "2022-01-01",
-          vesting: "25_25_50",
+          vestingSchedule: {
+            startDate: "2022-01-01",
+            cliffMonths: 12,
+            totalMonths: 36,
+            frequency: "MONTHLY",
+          },
         },
       ],
       purchasePlans: [],
@@ -67,5 +72,45 @@ describe("computeExitSnapshots", () => {
       // 3 purchases of 1000 at price 10 => 300 shares, exit share price 10.
       expect(purchaseSnapshot.exitValue).toBe(3000);
     }
+  });
+
+  it("applies acceleration on exit", () => {
+    const snapshot = computeExitSnapshots({
+      exitScenario: {
+        date: "2024-06-01",
+        exitEquityValue: 10_000,
+      },
+      optionGrants: [
+        {
+          quantityGranted: 100,
+          strikePrice: 1,
+          grantDate: "2024-01-01",
+          vestingSchedule: {
+            startDate: "2024-01-01",
+            cliffMonths: 12,
+            totalMonths: 48,
+            frequency: "MONTHLY",
+          },
+          acceleration: {
+            type: "SINGLE_TRIGGER",
+            percent: 1,
+          },
+        },
+      ],
+      purchasePlans: [],
+      capTableBase: {
+        commonOutstanding: 100,
+        optionPoolReserved: 0,
+        otherDilutiveShares: 0,
+      },
+      dilutionEvents: [],
+      entryValuation: {
+        date: "2024-01-01",
+        equityValue: 1000,
+      },
+    });
+
+    expect(snapshot.options[0]?.exercisableQty).toBe(100);
+    expect(snapshot.options[0]?.payout).toBeGreaterThan(0);
   });
 });

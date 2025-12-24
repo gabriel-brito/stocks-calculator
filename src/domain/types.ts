@@ -1,6 +1,8 @@
 import type { DateYMD } from "./date";
 
-export type SchemaVersion = "v1";
+export type SchemaVersion = "v1" | "v2";
+
+export type Money = number;
 
 export type CapTableBase = {
   commonOutstanding: number;
@@ -21,17 +23,81 @@ export type DilutionEvent = {
 
 export type ExitScenario = {
   date: DateYMD;
-  exitEquityValue: number;
+  exitEquityValue?: number;
+  enterpriseValue?: number;
+  netDebt?: number;
+  fees?: number;
 };
 
-export type Vesting = "25_25_50";
+export type VestingFrequency = "MONTHLY" | "QUARTERLY";
+
+export type VestingSchedule = {
+  startDate: DateYMD;
+  cliffMonths: number;
+  totalMonths: number;
+  frequency: VestingFrequency;
+};
+
+export type AccelerationType = "NONE" | "SINGLE_TRIGGER" | "DOUBLE_TRIGGER";
+
+export type Acceleration = {
+  type: AccelerationType;
+  percent: number;
+};
 
 export type OptionGrant = {
   quantityGranted: number;
   strikePrice: number;
   grantDate: DateYMD;
   expirationDate?: DateYMD;
-  vesting: Vesting;
+  vestingSchedule: VestingSchedule;
+  terminationDate?: DateYMD;
+  postTerminationExerciseWindowDays?: number;
+  acceleration?: Acceleration;
+};
+
+export type ShareClassType = "COMMON" | "PREFERRED";
+export type ParticipationType = "NONE" | "FULL";
+
+export type ShareClass = {
+  id: string;
+  name: string;
+  type: ShareClassType;
+  seniority: number;
+  preferenceMultiple: number;
+  investedAmount: Money;
+  participation: ParticipationType;
+  participationCapMultiple?: number;
+};
+
+export type Holding = {
+  holderId: string;
+  classId: string;
+  shares: number;
+};
+
+export type FinancingRound = {
+  date: DateYMD;
+  preMoney: number;
+  investmentAmount: number;
+  targetOptionPoolPostPercent?: number;
+  seriesName: string;
+  createsShareClassId?: string;
+};
+
+export type ConvertibleType = "SAFE" | "NOTE";
+export type ConvertibleConvertsOn = "NEXT_EQUITY_ROUND" | "EXIT" | "BOTH";
+
+export type ConvertibleInstrument = {
+  id: string;
+  type: ConvertibleType;
+  dateIssued: DateYMD;
+  amount: number;
+  cap?: number;
+  discount?: number;
+  interestRate?: number;
+  maturityDate?: DateYMD;
+  convertsOn: ConvertibleConvertsOn;
 };
 
 export const PurchasePriceMode = {
@@ -71,6 +137,10 @@ export type CompanyState = {
   exitScenario?: ExitScenario;
   optionGrants: OptionGrant[];
   purchasePlans: PurchasePlan[];
+  shareClasses: ShareClass[];
+  holdings: Holding[];
+  financingRounds: FinancingRound[];
+  convertibles: ConvertibleInstrument[];
   settings: Settings;
 };
 

@@ -3,8 +3,12 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import "./globals.css";
 
-const geist = Geist({ subsets: ["latin"] });
-const geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Equity Console - Gestao de Participacoes",
@@ -19,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="dark">
-      <body className={`${geist.className} ${geistMono.className} antialiased`}>
+      <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>

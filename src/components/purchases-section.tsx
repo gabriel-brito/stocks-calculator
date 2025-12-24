@@ -109,9 +109,22 @@ export function PurchasesSection({
       </CardHeader>
       <CardContent className="space-y-4">
         {plans.map((plan, index) => {
-          const canCompute =
-            entryFD > 0 && isValidYMD(plan.startDate) && isValidYMD(currentValuation.date);
-          const snapshot = canCompute
+          const canComputeEntry =
+            entryFD > 0 &&
+            entryValuation.equityValue > 0 &&
+            isValidYMD(entryValuation.date);
+          const purchasePrice =
+            plan.purchasePriceMode === "FIXED_SHARE_PRICE"
+              ? plan.purchaseSharePriceFixed ?? 0
+              : canComputeEntry
+                ? getPurchaseSharePrice(plan, entryValuation, entryFD)
+                : 0;
+          const canComputeSnapshot =
+            canComputeEntry &&
+            purchasePrice > 0 &&
+            isValidYMD(plan.startDate) &&
+            isValidYMD(currentValuation.date);
+          const snapshot = canComputeSnapshot
             ? computePurchasePlanSnapshot(
                 plan,
                 entryValuation,
@@ -121,13 +134,11 @@ export function PurchasesSection({
                 currentValuation.date,
               )
             : null;
-          const purchasePrice =
-            entryFD > 0 ? getPurchaseSharePrice(plan, entryValuation, entryFD) : 0;
-          const currentEffectiveAmount = canCompute
+          const currentEffectiveAmount = canComputeSnapshot
             ? getMonthlyAmountEffective(plan, currentValuation.date)
             : plan.monthlyAmount;
           const isPaused = currentEffectiveAmount === 0;
-          const totalMonths = canCompute
+          const totalMonths = canComputeSnapshot
             ? generateMonthlyPurchaseDates(
                 plan.startDate,
                 currentValuation.date,
@@ -339,7 +350,29 @@ export function PurchasesSection({
                       <span>R$ {purchasePrice.toFixed(4)}</span>
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="pt-4 border-t text-xs text-muted-foreground space-y-1">
+                    <p>Preencha os dados abaixo para calcular o plano:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {!isValidYMD(plan.startDate) ? <li>Data de inicio</li> : null}
+                      {!isValidYMD(entryValuation.date) ? (
+                        <li>Data de Entry Valuation</li>
+                      ) : null}
+                      {entryValuation.equityValue <= 0 ? (
+                        <li>Equity Value (Entry) &gt; 0</li>
+                      ) : null}
+                      {entryFD <= 0 ? <li>Cap Table (FD) &gt; 0</li> : null}
+                      {plan.purchasePriceMode === "FIXED_SHARE_PRICE" &&
+                      (plan.purchaseSharePriceFixed ?? 0) <= 0 ? (
+                        <li>Preco fixo por share &gt; 0</li>
+                      ) : null}
+                      {!isValidYMD(currentValuation.date) ? (
+                        <li>Data de Current Valuation</li>
+                      ) : null}
+                      {purchasePrice <= 0 ? <li>Preco de compra valido</li> : null}
+                    </ul>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );

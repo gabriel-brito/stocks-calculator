@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import type { CapTableBase, DilutionEvent, ExitScenario, ValuationPoint } from "@/domain/types";
 import { computeFD, computeSharePrice } from "@/domain/calculations";
 import { isValidYMD } from "@/domain/date";
+import { getExitEquityValue } from "@/domain/exit";
 
 interface ValuationsSectionProps {
   entryValuation: ValuationPoint;
@@ -48,6 +49,8 @@ export function ValuationsSection({
     exitEnabled && exitValuation && isValidYMD(exitValuation.date)
       ? computeFD(capTable, dilutionEvents, exitValuation.date)
       : 0;
+  const useEnterpriseValue =
+    exitEnabled && exitValuation && exitValuation.enterpriseValue !== undefined;
 
   const entrySharePrice =
     entryValuation.equityValue > 0 && entryFD > 0
@@ -58,8 +61,8 @@ export function ValuationsSection({
       ? computeSharePrice(currentValuation.equityValue, currentFD)
       : 0;
   const exitSharePrice =
-    exitEnabled && exitValuation && exitValuation.exitEquityValue > 0 && exitFD > 0
-      ? computeSharePrice(exitValuation.exitEquityValue, exitFD)
+    exitEnabled && exitValuation && exitFD > 0
+      ? computeSharePrice(getExitEquityValue(exitValuation), exitFD)
       : 0;
 
   return (
@@ -187,28 +190,132 @@ export function ValuationsSection({
                   maxDate={new Date("2050-12-31")}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Equity Value (R$)</Label>
-                <Input
-                  type="number"
-                  placeholder="ex: 50000000"
-                  value={exitValuation?.exitEquityValue || ""}
-                  onChange={(e) =>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="exit-ev-toggle" className="text-sm">
+                  Exit por Enterprise Value
+                </Label>
+                <Switch
+                  id="exit-ev-toggle"
+                  checked={useEnterpriseValue}
+                  onCheckedChange={(checked) =>
                     onExitChange(
                       exitValuation
                         ? {
                             ...exitValuation,
-                            exitEquityValue: Number(e.target.value) || 0,
+                            enterpriseValue: checked ? exitValuation.enterpriseValue ?? 0 : undefined,
+                            netDebt: checked ? exitValuation.netDebt ?? 0 : undefined,
+                            fees: checked ? exitValuation.fees ?? 0 : undefined,
+                            exitEquityValue: checked ? undefined : exitValuation.exitEquityValue ?? 0,
                           }
                         : {
                             date: currentValuation.date as ExitScenario["date"],
-                            exitEquityValue: Number(e.target.value) || 0,
+                            enterpriseValue: checked ? 0 : undefined,
+                            netDebt: checked ? 0 : undefined,
+                            fees: checked ? 0 : undefined,
+                            exitEquityValue: checked ? undefined : 0,
                           },
                     )
                   }
                 />
               </div>
-              {exitValuation && exitValuation.exitEquityValue > 0 && exitFD > 0 ? (
+              {useEnterpriseValue ? (
+                <>
+                  <div className="space-y-2">
+                    <Label>Enterprise Value (R$)</Label>
+                    <Input
+                      type="number"
+                      placeholder="ex: 80000000"
+                      value={exitValuation?.enterpriseValue ?? ""}
+                      onChange={(e) =>
+                        onExitChange(
+                          exitValuation
+                            ? {
+                                ...exitValuation,
+                                enterpriseValue: Number(e.target.value) || 0,
+                              }
+                            : {
+                                date: currentValuation.date as ExitScenario["date"],
+                                enterpriseValue: Number(e.target.value) || 0,
+                              },
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Net Debt (R$)</Label>
+                    <Input
+                      type="number"
+                      placeholder="ex: 5000000"
+                      value={exitValuation?.netDebt ?? ""}
+                      onChange={(e) =>
+                        onExitChange(
+                          exitValuation
+                            ? {
+                                ...exitValuation,
+                                netDebt: Number(e.target.value) || 0,
+                              }
+                            : {
+                                date: currentValuation.date as ExitScenario["date"],
+                                netDebt: Number(e.target.value) || 0,
+                              },
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fees (R$)</Label>
+                    <Input
+                      type="number"
+                      placeholder="ex: 2000000"
+                      value={exitValuation?.fees ?? ""}
+                      onChange={(e) =>
+                        onExitChange(
+                          exitValuation
+                            ? {
+                                ...exitValuation,
+                                fees: Number(e.target.value) || 0,
+                              }
+                            : {
+                                date: currentValuation.date as ExitScenario["date"],
+                                fees: Number(e.target.value) || 0,
+                              },
+                        )
+                      }
+                    />
+                  </div>
+                  {exitValuation ? (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Equity Value (calculado):</span>
+                      <span className="font-semibold tabular-nums">
+                        R$ {getExitEquityValue(exitValuation).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Equity Value (R$)</Label>
+                  <Input
+                    type="number"
+                    placeholder="ex: 50000000"
+                    value={exitValuation?.exitEquityValue || ""}
+                    onChange={(e) =>
+                      onExitChange(
+                        exitValuation
+                          ? {
+                              ...exitValuation,
+                              exitEquityValue: Number(e.target.value) || 0,
+                            }
+                          : {
+                              date: currentValuation.date as ExitScenario["date"],
+                              exitEquityValue: Number(e.target.value) || 0,
+                            },
+                      )
+                    }
+                  />
+                </div>
+              )}
+              {exitValuation && getExitEquityValue(exitValuation) > 0 && exitFD > 0 ? (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Share Price (Exit):</span>
                   <span className="font-semibold tabular-nums">

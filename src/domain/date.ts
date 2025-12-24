@@ -92,3 +92,13 @@ export const monthsBetweenFloor = (fromYMD: string, toYMD: string) => {
   }
   return Math.max(0, months);
 };
+
+export const addDaysYMD = (ymd: string, days: number): DateYMD => {
+  const { y, m, d } = parseYMD(ymd);
+  const date = new Date(Date.UTC(y, m - 1, d + days));
+  return formatYMD(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+  );
+};
